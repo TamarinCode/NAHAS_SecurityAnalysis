@@ -1,0 +1,181 @@
+%%%Phase3_HO
+role ncc (	S,U,T   :  agent,
+               	Snd,Rcv :  channel(dy),
+		R_u     :  symmetric_key,
+		R_t     :  symmetric_key,
+		Hash    :  hash_func,
+		PID_t   :  text)
+played_by S
+def=
+
+	local 	
+		State   :  nat,
+             	Nu      :  text,
+		PIDnew_t:  text,
+		SK_tu   :  message,        
+		Succ    :  text 
+    	
+	init    State   := 1
+
+    	transition
+	1. 	State    = 1 	/\ Rcv({PID_t.Nu'}_R_u)  =|>
+
+	    	State'  := 2		
+				/\ PIDnew_t' :=new()
+				/\ SK_tu' := Hash(U.Nu'.R_t)
+	        		/\ Snd({xor(U,Hash(T.PID_t.R_t)).{PIDnew_t'}_R_t.Nu'.SK_tu'}_R_u)
+				/\ secret(PIDnew_t',proid3,{S,T})
+				/\ secret(SK_tu',proid10,{T,S,U})
+  				
+
+	2.   	State    = 2	/\ Rcv({Succ}_R_u)       =|>
+ 
+		State'  := 3	
+
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+role uav(	S,U,T   :  agent,
+		Snd,Rcv :  channel(dy),
+		R_u     :  symmetric_key,
+		Hash    :  hash_func,
+		PID_t   :  text)                
+
+played_by U
+def=
+
+	local 
+		State   :  nat,
+             	Nu      :  text,
+		Nt      :  text,	
+		SK_tu   :  message,
+		MAC1    :  message,        
+		MAC2    :  message,
+		X       :  message, 
+		Y       :  message,       
+		Succ    :  text
+
+ 
+	init    State   := 1
+
+    	transition
+	1.      State    = 1 	/\ Rcv(PID_t)      =|>
+           	
+	        State'  := 2	/\ Nu':=new() 
+			        /\ Snd({PID_t.Nu'}_R_u)
+			
+
+      	2. 	State    = 2	/\ Rcv({X'.Y'.Nu.SK_tu'}_R_u)  =|>
+	
+	     	State'  := 3	/\ MAC1':=Hash(PID_t.U.Nu.X'.SK_tu')	
+		       		/\ Snd(Nu.X'.Y'.MAC1')
+				/\ secret(SK_tu,proid8,{U,T,S})
+				/\ witness(U,T,proid7,SK_tu')
+
+	3. 	State    = 3	/\ Rcv(Nt'.MAC2')
+				/\ MAC2' = Hash(U.Nt'.Nu.X.Y.SK_tu)  =|>   
+
+	   	State'  := 4    /\ Snd({Succ}_R_u)
+				/\ request(U,T,proid6,Nt')
+				
+
+		
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+role ter(	S,U,T   :  agent,
+		Snd, Rcv:  channel(dy),
+		R_t     :  symmetric_key,
+		Hash    :  hash_func,
+		PID_t   :  text)                
+
+played_by T
+def=
+
+	local 
+		State   :  nat,
+		Nt      :  text,
+             	Nu      :  text,
+		PIDnew_t:  text,
+		SK_tu   :  message,
+		MAC1    :  message,        
+		MAC2    :  message
+		                       
+	
+
+ 
+	init    State   := 1
+
+    	transition
+	1. 	State    = 1 	/\ Rcv(start)      =|>
+           	
+	   	State'  := 2	/\ Snd(PID_t)
+			
+			
+      	2. 	State    = 2	/\ Rcv(Nu'.xor(U,Hash(T.PID_t.R_t)).{PIDnew_t'}_R_t.MAC1')
+				/\ SK_tu' = Hash(U.Nu'.R_t)
+				/\ MAC1'  = Hash(PID_t.U.Nu'.xor(U.PIDnew_t',Hash(T.PID_t.R_t)).SK_tu') =|>
+	
+	    	State'  := 3	/\ Nt':= new()
+		        	/\ MAC2':= Hash(U.Nt'.Nu'.xor(U.PIDnew_t',Hash(T.PID_t.R_t)).SK_tu')
+		       		/\ Snd(Nt'.MAC2')
+				/\ secret(PIDnew_t',proid4,{T,S})
+				/\ secret(SK_tu',proid5,{T,S,U})
+				/\ witness(T,U,proid6,Nt')
+				/\ request(T,U,proid7,SK_tu')
+			
+
+		
+end role
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+role session (
+		S,U,T :  agent,
+		R_u   :  symmetric_key,
+		R_t   :  symmetric_key,
+		Hash  :  hash_func,
+		PID_t :  text)
+
+
+def=
+local 
+	Snd1,Rcv1,Snd2,Rcv2,Snd3,Rcv3:  channel (dy)
+
+ composition
+	
+	    ncc(S,U,T,Snd2,Rcv2,R_u,R_t,Hash,PID_t)
+	/\  uav(S,U,T,Snd1,Rcv1,R_u,Hash,PID_t)
+	/\  ter(S,U,T,Snd3,Rcv3,R_t,Hash,PID_t)
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+role environment()  def=
+
+	const  
+		proid1,proid3,proid4,proid5,proid6,proid7,proid8,proid10 : protocol_id,
+		t,u,s,i : agent,
+		k_ts,k_us,k_is,k_ti,k_ui : symmetric_key,
+		h : hash_func,
+		pid_ts,pid_is,pid_ti : text
+
+
+	intruder_knowledge = {t,u,s,i,h,k_is,pid_is}
+
+	composition 
+		   session(s,u,t,k_us,k_ts,h,pid_ts)
+		/\ session(s,i,t,k_is,k_ts,h,pid_ts)
+		/\ session(i,u,t,k_ui,k_ti,h,pid_ti)
+		/\ session(s,u,i,k_us,k_is,h,pid_is)
+end role
+
+
+
+goal
+	secrecy_of proid1,proid3,proid4,proid5,proid8,proid10
+	authentication_on proid6
+	authentication_on proid7
+end goal
+
+environment()
+

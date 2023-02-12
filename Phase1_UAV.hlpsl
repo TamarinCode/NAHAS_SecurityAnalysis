@@ -1,0 +1,140 @@
+%%%Phase1_UAV
+role ncc (	S,U      :  agent,
+                Snd, Rcv :  channel(dy),
+		R        :  symmetric_key,
+		Hash     :  hash_func,
+		C,PID    :  text)
+played_by S
+def=
+
+	local 	
+		State    :  nat,
+             	Nu       :  text,
+		Nn       :  text,
+		PIDnew   :  text,
+		Rnew     :  text, 	
+		SK       :  hash(text.text.text.symmetric_key),
+		MAC1     :  message,       
+		MAC2     :  message,                        
+		Cnew     :  hash(agent.text.symmetric_key)
+
+    	init    State  := 1
+
+    	transition
+	1. 	State   = 1 	/\ Rcv (Nu'.PID)  =|>
+
+	    	State' := 2	/\ Nn':= new() 
+				/\ SK' := Hash(Nu'.Nn'.C.R) 
+				/\ PIDnew' := new()
+	       			/\ MAC1':= Hash(PID.U.Nu'.Nn'.xor(PIDnew',Hash(U.PID.SK')).C.SK')
+	       			/\ Snd (Nn'.xor(PIDnew',Hash(U.PID.SK')).MAC1')
+				/\ Cnew':= Hash(U.C.R)
+				/\ secret(PIDnew',r1,{S,U})
+				/\ secret(SK',r7,{S,U})
+  				/\ witness(S,U,r6,Nn')
+
+	2.   	State   = 2	/\ Rcv (xor(Rnew',Hash(U.Nn.R)).MAC2')
+		 	  	/\ MAC2'= Hash(PIDnew.Cnew.xor(Rnew',Hash(U.Nn.R)).SK)	=|>
+ 
+		State' := 3	/\ secret(Rnew',r2,{S,U})
+				/\ request(S,U,r3,Nu)
+
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+role uav(	S,U      :  agent,
+		Snd, Rcv :  channel(dy),
+		R        :  symmetric_key,
+		Hash     :  hash_func,
+		C,PID    :  text)                
+
+played_by U
+def=
+
+	local 
+		State    :  nat,
+             	Nu       :  text,
+		Nn       :  text,
+		PIDnew   :  text,
+		Rnew     :  text, 	
+		SK       :  hash(text.text.text.symmetric_key),
+		MAC1     :  message,        
+		MAC2     :  message,                       
+		Cnew     :  hash(agent.text.symmetric_key)
+
+ 
+	init    State  := 1
+
+    	transition
+	1.      State   = 1 	/\ Rcv(start)      =|>
+           	
+	        State' := 2	/\ Nu':= new() 
+				/\ Snd(Nu'.PID)
+				/\ witness(U,S,r3,Nu')
+
+      	2.      State   = 2	/\ Rcv (Nn'.xor(PIDnew',Hash(U.PID.SK')).MAC1') 
+				/\ SK'  = Hash(Nu.Nn'.C.R) 
+				/\ MAC1'= Hash(PID.U.Nu.Nn'.xor(PIDnew',Hash(U.PID.SK')).C.SK')   =|>
+	
+	        State' := 3	/\ Rnew' := new()  
+				/\ Cnew' := Hash(U.C.R)
+		         	/\ MAC2' := Hash(PIDnew'.Cnew'.xor(Rnew',Hash(U.Nn'.R)).SK')
+		       		/\ Snd (xor(Rnew',Hash(U.Nn'.R)).MAC2')
+				/\ secret(Rnew',r4,{U,S})
+				/\ secret(PIDnew',r5,{U,S})
+				/\ secret(SK',r8,{U,S})
+				/\ request(U,S,r6,Nn')
+
+		
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+role session (S,U  :  agent,
+	      R    :  symmetric_key,
+	      Ha   :  hash_func,
+	      C,PID:  text) 
+def=
+local 
+	Snd1,Rcv1,Snd2,Rcv2: channel (dy)
+
+ composition
+	   uav(S,U,Snd1,Rcv1,R,Ha,C,PID)
+	/\ ncc(U,S,Snd2,Rcv2,R,Ha,C,PID)
+end role
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+role environment()  def=
+
+
+
+	const  
+		r1,r2,r3,r4,r5,r6,r7,r8 : protocol_id,
+		a,b,i : agent,
+		k_ab,k_ai,k_bi : symmetric_key,
+		h : hash_func,
+		c_ab,c_ai,c_bi  : text,
+		pid_ab,pid_ai,pid_bi : text
+
+
+	intruder_knowledge = {a,b,i,h,k_ai,c_ai,pid_ai}
+
+	composition 
+		   session(a,b,k_ab,h,c_ab,pid_ab)
+		/\ session(a,i,k_ai,h,c_ai,pid_ai)
+		/\ session(i,b,k_bi,h,c_bi,pid_bi)
+end role
+
+
+
+goal
+	secrecy_of r1,r2,r4,r5,r7,r8
+	authentication_on r3
+	authentication_on r6
+end goal
+
+environment()
+
